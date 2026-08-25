@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "minidist"
+version = "0.1.0"
+description = "A lightweight distributed training framework: DDP, FSDP, tensor and pipeline parallelism, built on torch.distributed collectives"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["torch>=2.1"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4", "ruff>=0.4"]
+
+[tool.setuptools.packages.find]
+include = ["minidist*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Multi-process tests spawn real process groups; a hang is a bug, not a slow
+# test, so keep the default failure mode loud rather than letting CI sit.
+addopts = "-ra --strict-markers"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501", "B008"]

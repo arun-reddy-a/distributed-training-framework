@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Environments
+.venv/
+venv/
+env/
+
+# Test / tooling caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Benchmark and profiler artifacts
+results/
+traces/
+*.json.gz
+*.trace.json
+*.nsys-rep
+*.sqlite
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/

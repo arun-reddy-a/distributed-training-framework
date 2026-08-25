@@ -1,0 +1,60 @@
+name: tests
+
+# GitHub-hosted runners have no GPU, so CI runs the full correctness suite on
+# the Gloo/CPU backend. That covers everything except NCCL's own kernels and
+# achieved bandwidth: process-group construction, collective ordering, autograd
+# interaction, hook firing, and every place two ranks could disagree. The
+# benchmarks need real hardware and are not run here -- see README "Testing".
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check minidist tests benchmarks examples
+
+      - name: Run tests
+        # Each test spawns a real multi-process group; a hang means a deadlock,
+        # which is a bug worth failing on rather than waiting out.
+        timeout-minutes: 15
+        run: pytest -v
+
+      - name: Smoke-test the trainer under torchrun
+        run: |
+          torchrun --nproc_per_node=4 examples/train_gpt.py \
+            --tp 2 --pp 2 --strategy none --microbatches 4 \
+            --layers 4 --embd 128 --heads 4 --vocab 1024 --seq-len 64 \
+            --batch-size 8 --steps 4 --backend gloo
+
+      - name: Smoke-test the benchmarks
+        run: |
+          torchrun --nproc_per_node=4 benchmarks/bench_parallelism.py \
+            --layers 4 --embd 128 --heads 4 --vocab 1024 --seq-len 64 \
+            --batch-size 4 --iters 3 --warmup 1 --backend gloo
+          torchrun --nproc_per_node=4 benchmarks/bench_pipeline.py \
+            --microbatches 1,4 --layers 8 --embd 128 --heads 4 --vocab 1024 \
+            --seq-len 64 --batch-size 8 --iters 2 --backend gloo --gantt
