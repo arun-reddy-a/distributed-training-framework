@@ -31,7 +31,6 @@ import argparse
 import time
 
 import torch
-import torch.distributed as dist
 from torch import nn
 
 from minidist import (
@@ -44,8 +43,48 @@ from minidist import (
     shutdown_distributed,
     theoretical_bubble_fraction,
 )
+from minidist.comm import all_gather_into_tensor
 from minidist.models import GPTConfig, build_pipeline_layers
 from minidist.tensor_parallel import vocab_parallel_cross_entropy
+
+# Fields of `schedule.report()`, gathered as a flat float64 tensor.
+REPORT_KEYS = (
+    "wall_s", "busy_s", "comm_s",
+    "measured_bubble", "theoretical_bubble", "peak_activations_in_flight",
+)
+GANTT_WIDTH = 72
+
+
+# `dist.all_gather_object` would be the obvious way to collect these, but it
+# pickles through a numpy round-trip -- and torch does not require numpy, so on
+# a lean install it fails with "Numpy is not available". Both payloads here are
+# fixed-size and trivially expressible as tensors, so plain collectives are
+# both more portable and cheaper than shipping pickles between ranks.
+
+
+def gather_reports(report: dict, mesh) -> list[dict]:
+    local = torch.tensor(
+        [float(report[k]) for k in REPORT_KEYS], dtype=torch.float64, device=mesh.device
+    )
+    out = torch.empty(mesh.pp_size * len(REPORT_KEYS), dtype=torch.float64, device=mesh.device)
+    all_gather_into_tensor(out, local, group=mesh.pp_group)
+    return [
+        dict(zip(REPORT_KEYS, row.tolist(), strict=True))
+        for row in out.view(mesh.pp_size, len(REPORT_KEYS))
+    ]
+
+
+def gather_ascii(text: str, mesh, width: int = GANTT_WIDTH) -> list[str]:
+    encoded = text.encode("ascii", "replace")[:width]
+    local = torch.zeros(width, dtype=torch.uint8, device=mesh.device)
+    if encoded:
+        local[: len(encoded)] = torch.frombuffer(bytearray(encoded), dtype=torch.uint8)
+    out = torch.empty(mesh.pp_size * width, dtype=torch.uint8, device=mesh.device)
+    all_gather_into_tensor(out, local, group=mesh.pp_group)
+    return [
+        bytes(row.tolist()).rstrip(b"\x00").decode("ascii")
+        for row in out.view(mesh.pp_size, width)
+    ]
 
 
 def build_stage(config, mesh, device):
@@ -122,11 +161,9 @@ def main() -> None:
                 schedule.step(inputs=ids, targets=targets)
             elapsed = (time.perf_counter() - start) / args.iters
 
-            report = schedule.report()
             # Gather every stage's view; the bubble is a property of the whole
             # pipeline, and stage 0 sees a very different one from stage P-1.
-            gathered: list[dict] = [None] * mesh.pp_size  # type: ignore[list-item]
-            dist.all_gather_object(gathered, report, group=mesh.pp_group)
+            gathered = gather_reports(schedule.report(), mesh)
 
             if mesh.rank == 0:
                 measured = max(r["measured_bubble"] for r in gathered)
@@ -141,10 +178,7 @@ def main() -> None:
                 )
 
             if args.gantt and num_microbatches == args.microbatches[-1]:
-                rows: list[str] = [None] * mesh.pp_size  # type: ignore[list-item]
-                dist.all_gather_object(
-                    rows, schedule.timeline.ascii_gantt(), group=mesh.pp_group
-                )
+                rows = gather_ascii(schedule.timeline.ascii_gantt(GANTT_WIDTH), mesh)
                 if mesh.rank == 0:
                     print_rank0(f"\n  {schedule_name} timeline, M={num_microbatches} "
                                 "(F=forward B=backward >=send <=recv .=idle)")
