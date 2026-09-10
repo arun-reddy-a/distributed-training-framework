@@ -105,6 +105,7 @@ def full_embedding_weight(
 
 
 def _split_last_dim(t: torch.Tensor, world: int, rank: int) -> torch.Tensor:
+    """This rank's contiguous slice of `t`'s last dimension, split evenly."""
     last = t.size(-1)
     if last % world:
         raise ValueError(f"cannot split dim of size {last} across {world} ranks")
@@ -112,6 +113,7 @@ def _split_last_dim(t: torch.Tensor, world: int, rank: int) -> torch.Tensor:
 
 
 def _gather_last_dim(t: torch.Tensor, group, world: int) -> torch.Tensor:
+    """Inverse of _split_last_dim: reassemble every rank's shard, concatenated."""
     if world == 1:
         return t
     parts = [torch.empty_like(t) for _ in range(world)]

@@ -197,6 +197,8 @@ def format_collective_table(rows: Iterable[CollectiveRow]) -> str:
 
 
 def _merge(intervals: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Collapse overlapping/touching intervals so a category's busy time can
+    be summed without double-counting kernels that ran concurrently."""
     if not intervals:
         return []
     intervals.sort()

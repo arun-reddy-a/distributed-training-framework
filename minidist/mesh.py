@@ -102,12 +102,17 @@ class ParallelMesh:
     # -- coordinate algebra -------------------------------------------------
 
     def coord_of(self, rank: int) -> _Coord:
+        # Inverse of rank_of below: peel off tp (fastest-varying) first, then
+        # dp, leaving pp. Matches the mixed-radix layout in the module
+        # docstring, so a rank's TP group is always a block of consecutive ranks.
         tp = rank % self.tp_size
         dp = (rank // self.tp_size) % self.dp_size
         pp = rank // (self.tp_size * self.dp_size)
         return _Coord(pp=pp, dp=dp, tp=tp)
 
     def rank_of(self, pp: int, dp: int, tp: int) -> int:
+        # rank = pp * (dp_size * tp_size) + dp * tp_size + tp -- see module
+        # docstring for why this ordering (tp fastest, pp slowest) matters.
         return pp * (self.dp_size * self.tp_size) + dp * self.tp_size + tp
 
     # -- group construction -------------------------------------------------
@@ -192,4 +197,5 @@ class ParallelMesh:
 
 
 def torch_dtype_bytes(dtype: torch.dtype) -> int:
+    """Bytes per element for `dtype`, without allocating a real tensor."""
     return torch.empty((), dtype=dtype).element_size()

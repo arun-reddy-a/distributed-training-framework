@@ -492,6 +492,9 @@ class FullyShardedDataParallel(nn.Module):
         return [(u.name, u.total_numel, u.shard_numel) for u in self._units]
 
     def __getattr__(self, name: str):
+        # Same passthrough rationale as DistributedDataParallel.__getattr__:
+        # lets callers reach the wrapped module's own methods/attributes
+        # through the FSDP wrapper without unwrapping it themselves.
         try:
             return super().__getattr__(name)
         except AttributeError:

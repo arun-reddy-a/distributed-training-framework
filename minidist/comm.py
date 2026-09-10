@@ -119,6 +119,8 @@ def record_comm() -> Iterator[CommStats]:
 
 
 def _default_backend() -> str:
+    # NCCL needs CUDA devices to talk to; fall back to Gloo (CPU-capable) so
+    # every code path here also runs on a machine with no GPU at all.
     if torch.cuda.is_available() and dist.is_nccl_available():
         return "nccl"
     return "gloo"
@@ -206,6 +208,7 @@ def print_rank0(*args, **kwargs) -> None:
 
 
 def _nbytes(t: torch.Tensor) -> int:
+    """Payload size of a tensor, for the byte counters in CommStats."""
     return t.numel() * t.element_size()
 
 

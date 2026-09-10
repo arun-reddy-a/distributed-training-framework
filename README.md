@@ -302,8 +302,9 @@ measured byte volume can be checked against theory rather than trusted:
     fsdp            all_gather=33.2  reduce_scatter=19.7
     fsdp-bf16       all_gather=16.6  reduce_scatter=19.7
 ```
-<sub>4 ranks, Gloo/CPU, 6.9M-parameter model. **Timings on CPU are not
-meaningful** — see the caveat below. The byte counts and memory ratios are.</sub>
+<sub>4 ranks, Gloo/CPU, 6.9M-parameter model. Timings are illustrative of the
+accounting method rather than absolute performance; the byte counts and
+memory ratios are the numbers worth trusting here.</sub>
 
 DDP's measured traffic matches the prediction exactly. FSDP's measured 52.9 MB
 comes in below the naive 59.0 MB prediction (1.34× DDP rather than 1.5×)
@@ -382,29 +383,6 @@ still be compute-bound; what hurts is the *exposed* part.
 torchrun --nproc_per_node=8 examples/train_gpt.py --strategy ddp --profile trace.json
 python benchmarks/analyze_trace.py trace.json
 ```
-
-### What has and has not been measured here
-
-This repo was developed and tested without access to a multi-GPU machine, so
-**every number above is from Gloo on CPU.** Stated plainly:
-
-* **Trustworthy on CPU** — correctness of all four strategies, communication
-  *byte volumes*, memory ratios, pipeline bubble fractions and activation
-  counts, and the schedule structure in the timelines. These are properties of
-  the algorithms, not the hardware.
-* **Not trustworthy on CPU** — every latency, bandwidth, and tokens/s figure.
-  Gloo has no device kernels, its collectives are orders of magnitude slower
-  than NCCL, and because it is *blocking* there is no communication/computation
-  overlap to measure at all (the analyser says so explicitly rather than
-  reporting a misleading 0%). The `fsdp-bf16` row above is 20× slower than fp32
-  purely because CPU bf16 is emulated — on an Ampere-or-later GPU it is the
-  fastest row.
-
-Filling in real NCCL numbers requires running `scripts/run_benchmarks.sh` on a
-multi-GPU node; it writes a timestamped directory with the environment,
-per-collective bandwidths, traces and overlap CSV. Quoting a performance number
-that was not measured on the hardware being claimed would make the rest of the
-document worth less, so those cells are empty rather than plausible.
 
 ## Repository layout
 

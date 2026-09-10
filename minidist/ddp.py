@@ -290,6 +290,9 @@ class DistributedDataParallel(nn.Module):
         return out
 
     def __getattr__(self, name: str):
+        # Transparent passthrough to the wrapped module for anything that
+        # isn't an nn.Module attribute of the wrapper itself, so callers can
+        # treat `DDP(model)` like `model` for custom methods/attributes.
         try:
             return super().__getattr__(name)
         except AttributeError:
