@@ -202,9 +202,21 @@ class DistributedDataParallel(nn.Module):
         if not self.require_backward_grad_sync:
             return
 
-        # Queue the end-of-backward callback from inside the engine, which is
-        # the only place `queue_callback` is legal.  This is what lets callers
-        # write a plain `loss.backward(); opt.step()` without an explicit sync.
+        # `_launch` below only starts an async all-reduce; nothing has waited
+        # on it or copied the reduced values back into `.grad` yet. Something
+        # must do that before `opt.step()` touches the gradients, and it must
+        # happen without the caller adding an explicit "sync now" call — the
+        # design goal is that plain `loss.backward(); opt.step()` is correct.
+        #
+        # `queue_callback` is PyTorch's (private) way to schedule a function
+        # to run exactly once, right after the *entire* backward pass has
+        # finished traversing the graph, but still inside the engine's own
+        # execution — before control returns to whoever called `.backward()`.
+        # This mirrors what PyTorch's own real DistributedDataParallel does
+        # internally (its C++ Reducer uses the same trick). It's also only
+        # legal to call from inside the engine while a backward pass is
+        # running, which this hook is, since the engine itself invokes it
+        # per-parameter during backward.
         if not self._callback_queued:
             self._callback_queued = True
             try:
