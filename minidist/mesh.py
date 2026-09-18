@@ -122,6 +122,11 @@ class ParallelMesh:
         for pp in range(self.pp_size):
             for dp in range(self.dp_size):
                 ranks = [self.rank_of(pp, dp, tp) for tp in range(self.tp_size)]
+                """This function requires that all processes in the main group
+                (i.e. all processes that are part of the distributed job) enter this function,
+                even if they are not going to be members of the group.
+                Additionally, groups should be created in the same order in all processes.
+                Source: Pytorch documentation: https://docs.pytorch.org/docs/2.14/distributed.html"""
                 group = dist.new_group(ranks)
                 if self.rank in ranks:
                     self._tp_group = group
@@ -174,16 +179,6 @@ class ParallelMesh:
     @property
     def next_stage_rank(self) -> int | None:
         return None if self.is_last_stage else self.pp_ranks[self.pp_rank + 1]
-
-    def seed_offset(self) -> int:
-        """Per-rank RNG offset.
-
-        Data-parallel replicas must see *different* data but identical
-        parameters; tensor-parallel ranks must see identical data but hold
-        different parameter shards.  Deriving the data seed from ``dp_rank``
-        alone (and never from ``tp_rank``) is what keeps both true.
-        """
-        return self.dp_rank + self.pp_rank * self.dp_size
 
     def describe(self) -> str:
         return (
